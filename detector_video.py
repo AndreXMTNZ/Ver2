@@ -1,29 +1,43 @@
-import time
 from gpiozero import MotionSensor
+import subprocess
+import time
 import os
 
-# Configuración del sensor PIR en el pin GPIO 4
-pir = MotionSensor(4)
-video_path = "/home/pi/videos/video.mp4"  # Cambia esta ruta si tu video está en otro lugar
+# Configuración del sensor PIR
+pir = MotionSensor(17)  # GPIO 17
+video_path = "/ruta/a/tu/video.mp4"  # Cambia esta ruta al archivo de video
+vlc_process = None  # Variable para controlar el proceso de VLC
 
-def play_video():
-    # Activa la pantalla y reproduce el video en bucle
-    os.system("vcgencmd display_power 1")  # Activa la pantalla
-    os.system(f"cvlc --fullscreen --loop {video_path} &")  # Reproduce el video en VLC
+try:
+    print("Esperando detección de movimiento...")
+    while True:
+        # Esperar movimiento
+        pir.wait_for_motion()
+        print("¡Movimiento detectado! Reproduciendo video...")
+        
+        # Iniciar VLC si no está ejecutándose
+        if vlc_process is None:
+            vlc_process = subprocess.Popen(["vlc", "--fullscreen", "--no-video-title-show", video_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Esperar 30 segundos de inactividad
+        last_motion_time = time.time()
+        while time.time() - last_motion_time < 30:
+            if pir.motion_detected:
+                print("Movimiento detectado, reiniciando temporizador...")
+                last_motion_time = time.time()
+            time.sleep(1)
+        
+        # No se detectó movimiento en 30 segundos
+        print("No se detectó movimiento por 30 segundos. Cerrando VLC...")
+        if vlc_process is not None:
+            vlc_process.terminate()  # Terminar el proceso de VLC
+            vlc_process = None  # Reiniciar el control del proceso
 
-def stop_video():
-    # Detiene el video y apaga la pantalla
-    os.system("pkill vlc")  # Detiene VLC
-    os.system("vcgencmd display_power 0")  # Apaga la pantalla
+except KeyboardInterrupt:
+    print("Programa terminado por el usuario.")
 
-while True:
-    if pir.motion_detected:
-        print("Movimiento detectado: reproduciendo video")
-        play_video()
-
-        # Espera hasta que no haya movimiento durante 30 segundos
-        pir.wait_for_no_motion(timeout=30)
-        print("No se detecta movimiento durante 30 segundos: apagando pantalla")
-        stop_video()
-
-    time.sleep(1)
+finally:
+    # Asegurar que VLC se cierre si está abierto
+    if vlc_process is not None:
+        vlc_process.terminate()
+    print("Limpiando recursos...")
